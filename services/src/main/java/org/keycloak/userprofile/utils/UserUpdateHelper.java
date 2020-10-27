@@ -17,6 +17,7 @@
 
 package org.keycloak.userprofile.utils;
 
+import org.jboss.logging.Logger;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
@@ -35,6 +36,13 @@ import java.util.Set;
  */
 public class UserUpdateHelper {
 
+    private static final Logger log = Logger.getLogger(UserUpdateHelper.class);
+
+    private static Set<String> protectedAttributes = new HashSet<String>(){{
+        add("username");
+        add("LDAP_");
+        add("saml.");
+    }};
 
     public static void updateRegistrationProfile(RealmModel realm, UserModel currentUser, UserProfile updatedUser) {
         register(UserUpdateEvent.RegistrationProfile, realm, currentUser, updatedUser);
@@ -113,6 +121,19 @@ public class UserUpdateHelper {
         }
     }
 
+    // Some attributes are protected and should not be removed from local storage:
+    //  -LDAP_*: attributes set by LDAPStorageProvider
+    //  -saml.*: attributes set for SAML persistent NameID
+    private static boolean isProtectedAttribute(String attribute) {
+        for (String pattern: protectedAttributes) {
+            if (attribute.equals(pattern) || attribute.startsWith(pattern)){
+                log.warnf("%s is a protected attribute, can't remove", attribute);
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void updateAttributes(UserModel currentUser, Map<String, List<String>> updatedUser, boolean removeMissingAttributes) {
         for (Map.Entry<String, List<String>> attr : updatedUser.entrySet()) {
             List<String> currentValue = currentUser.getAttribute(attr.getKey());
@@ -127,9 +148,10 @@ public class UserUpdateHelper {
             attrsToRemove.removeAll(updatedUser.keySet());
 
             for (String attr : attrsToRemove) {
-                currentUser.removeAttribute(attr);
+                if (!isProtectedAttribute(attr)) {
+                    currentUser.removeAttribute(attr);
+                }
             }
-
         }
     }
 
